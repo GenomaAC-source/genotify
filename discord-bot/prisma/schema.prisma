@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Channel {
+  id              String      @id @default(cuid())
+  discordId       String      @unique @map("discord_channel_id")
+  name            String
+  type            ChannelType @default(CLIENT)
+  clientSlug      String?     @unique @map("client_slug")
+  clientName      String?     @map("client_name")
+  webhookId       String?     @map("discord_webhook_id")
+  webhookUrl      String?     @map("discord_webhook_url")
+  categoryName    String?     @map("category_name")
+  active          Boolean     @default(true)
+  autoManaged     Boolean     @default(true) @map("auto_managed")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+  notifications   Notification[]
+
+  @@map("channels")
+}
+
+enum ChannelType {
+  CLIENT
+  INTERNAL
+  VENDOR
+}
+
+model Notification {
+  id          String             @id @default(cuid())
+  channelId   String?            @map("channel_id")
+  channel     Channel?           @relation(fields: [channelId], references: [id])
+  target      String
+  source      String
+  title       String
+  message     String
+  metadata    Json?
+  color       String?
+  status      NotificationStatus @default(PENDING)
+  sentAt      DateTime?          @map("sent_at")
+  error       String?
+  retries     Int                @default(0)
+  createdAt   DateTime           @default(now()) @map("created_at")
+
+  @@index([channelId, createdAt])
+  @@index([status])
+  @@map("notifications")
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  RETRYING
+}
+
+model PollState {
+  id          String   @id @default(cuid())
+  source      String   @unique
+  lastChecked DateTime @map("last_checked")
+  metadata    Json?
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("poll_states")
+}

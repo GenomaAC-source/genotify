@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+*.db
+*.log
+.DS_Store
+dashboard/build/
+dashboard/node_modules/
+discord-bot/node_modules/
+discord-bot/dist/
