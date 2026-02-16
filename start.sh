@@ -62,13 +62,13 @@ echo -e "${GREEN}✅ Migrations completate${NC}"
 # 4. Libera le porte
 echo ""
 echo "4️⃣  Verifico porte..."
-kill_port 3050
+kill_port 3060
 kill_port 50179
 echo -e "${GREEN}✅ Porte liberate${NC}"
 
 # 5. Avvia backend
 echo ""
-echo "5️⃣  Avvio backend su porta 3050..."
+echo "5️⃣  Avvio backend su porta 3060..."
 npm run dev > /tmp/genotify-backend.log 2>&1 &
 BACKEND_PID=$!
 sleep 3
@@ -105,7 +105,7 @@ echo -e "${GREEN}✅ Dashboard avviata (PID: $DASHBOARD_PID)${NC}"
 echo ""
 echo "7️⃣  Test health check..."
 sleep 2
-if curl -s http://localhost:3050/health >/dev/null 2>&1; then
+if curl -s http://localhost:3060/health >/dev/null 2>&1; then
     echo -e "${GREEN}✅ Backend risponde correttamente${NC}"
 else
     echo -e "${YELLOW}⚠️  Backend non risponde ancora, potrebbe servire più tempo${NC}"
@@ -122,7 +122,7 @@ echo -e "${GREEN}✅ Genotify avviato con successo!${NC}"
 echo "════════════════════════════════════════════════════════════"
 echo ""
 echo "📍 URLs:"
-echo "   • Backend API: http://localhost:3050"
+echo "   • Backend API: http://localhost:3060"
 echo "   • Dashboard:   http://localhost:50179"
 echo ""
 echo "📊 Processi:"

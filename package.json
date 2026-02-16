@@ -8,6 +8,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:all": "node dist/index.js & cd discord-bot && node dist/index.js",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:studio": "prisma studio"
@@ -24,6 +25,7 @@
     "@prisma/client": "^5.22.0",
     "dotenv": "^17.3.1",
     "express": "^4.21.2",
+    "express-rate-limit": "^8.2.1",
     "node-cron": "^3.0.3"
   },
   "devDependencies": {

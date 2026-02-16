@@ -7,6 +7,7 @@ import express from 'express';
 import { env } from './config/env.js';
 import { prisma } from './lib/prisma.js';
 import { authMiddleware } from './middleware/auth.js';
+import { apiLimiter, notifyLimiter } from './middleware/rateLimit.js';
 import { initializeScheduler } from './jobs/scheduler.js';
 
 // Import routes
@@ -19,13 +20,16 @@ const app = express();
 // Middleware
 app.use(express.json());
 
-// Routes (health check doesn't require auth)
+// Routes (health check doesn't require auth or rate limiting)
 app.use('/health', healthRouter);
 
-// Apply auth middleware to all other routes
+// Apply auth and general rate limiting to all other routes
 app.use(authMiddleware);
+app.use(apiLimiter);
+
+// Routes with specific rate limits
 app.use('/channels', channelsRouter);
-app.use('/notify', notifyRouter);
+app.use('/notify', notifyLimiter, notifyRouter);
 
 // Start server
 const server = app.listen(env.port, () => {

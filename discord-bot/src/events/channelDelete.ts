@@ -3,8 +3,11 @@ import { prisma } from "../lib/prisma.js";
 import { env } from "../config/env.js";
 
 export function registerChannelDeleteHandler(client: Client): void {
-  client.on(Events.ChannelDelete, async (channel: GuildChannel) => {
+  client.on(Events.ChannelDelete, async (channel) => {
     try {
+      // Verifica che sia un canale del server (non DM)
+      if (!('guild' in channel)) return;
+
       // Ignora canali che non sono del server configurato
       if (channel.guildId !== env.DISCORD_GUILD_ID) return;
 
