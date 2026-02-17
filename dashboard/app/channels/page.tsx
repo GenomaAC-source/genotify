@@ -33,9 +33,15 @@ export default function ChannelsPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Form State
-    const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState<{
+        name: string
+        type: 'INTERNAL' | 'CLIENT' | 'VENDOR'
+        clientSlug: string
+        clientName: string
+        webhookUrl: string
+    }>({
         name: "",
-        type: "INTERNAL" as const,
+        type: "INTERNAL",
         clientSlug: "",
         clientName: "",
         webhookUrl: ""
