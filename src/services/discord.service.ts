@@ -36,90 +36,48 @@ const colorMap: Record<string, number> = {
 };
 
 export class DiscordService {
-    private readonly maxRetries = 3;
-    private readonly retryDelays = [1000, 5000, 15000]; // 1s, 5s, 15s
-
     /**
-     * Send a notification to a Discord webhook
+     * Send a single notification attempt to Discord (no retry — queue handles retries)
+     * Returns success, error, and whether it was a rate limit (429)
      */
-    async sendNotification(
+    async sendSingle(
         channel: Channel,
         notification: NotificationData
-    ): Promise<{ success: boolean; error?: string; retries: number }> {
+    ): Promise<{ success: boolean; error?: string; rateLimited?: boolean }> {
         if (!channel.webhookUrl) {
-            return {
-                success: false,
-                error: 'Channel has no webhook URL configured',
-                retries: 0,
-            };
+            return { success: false, error: 'Channel has no webhook URL configured' };
         }
 
         const payload = this.buildPayload(channel, notification);
-        let lastError: string = '';
-        let retries = 0;
 
-        for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
-            try {
-                const response = await fetch(channel.webhookUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                });
+        try {
+            const response = await fetch(channel.webhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
 
-                if (response.ok) {
-                    console.log(
-                        `[Genotify] Successfully sent notification to ${channel.name}`
-                    );
-                    return { success: true, retries };
-                }
-
-                // Handle rate limiting
-                if (response.status === 429) {
-                    const retryAfter = response.headers.get('retry-after');
-                    const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : this.retryDelays[attempt] || 5000;
-
-                    console.log(
-                        `[Genotify] Rate limited on ${channel.name}, waiting ${waitTime}ms`
-                    );
-
-                    await this.sleep(waitTime);
-                    retries++;
-                    continue;
-                }
-
-                // Handle server errors (5xx)
-                if (response.status >= 500) {
-                    lastError = `Discord server error: ${response.status} ${response.statusText}`;
-                    console.error(`[Genotify] ${lastError}`);
-
-                    if (attempt < this.maxRetries) {
-                        await this.sleep(this.retryDelays[attempt]);
-                        retries++;
-                        continue;
-                    }
-                }
-
-                // Client errors (4xx) - don't retry
-                lastError = `Discord client error: ${response.status} ${response.statusText}`;
-                console.error(`[Genotify] ${lastError}`);
-                return { success: false, error: lastError, retries };
-            } catch (error) {
-                lastError = error instanceof Error ? error.message : 'Unknown network error';
-                console.error(`[Genotify] Network error: ${lastError}`);
-
-                if (attempt < this.maxRetries) {
-                    await this.sleep(this.retryDelays[attempt]);
-                    retries++;
-                    continue;
-                }
+            if (response.ok) {
+                console.log(`[Genotify] Sent notification to ${channel.name}`);
+                return { success: true };
             }
-        }
 
-        return {
-            success: false,
-            error: lastError || 'Max retries exceeded',
-            retries,
-        };
+            if (response.status === 429) {
+                const retryAfter = response.headers.get('retry-after');
+                console.log(
+                    `[Genotify] Rate limited on ${channel.name} (retry-after: ${retryAfter}s)`
+                );
+                return { success: false, rateLimited: true, error: 'Rate limited by Discord' };
+            }
+
+            const error = `Discord error: ${response.status} ${response.statusText}`;
+            console.error(`[Genotify] ${error}`);
+            return { success: false, error };
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : 'Unknown network error';
+            console.error(`[Genotify] Network error: ${msg}`);
+            return { success: false, error: msg };
+        }
     }
 
     /**
@@ -157,12 +115,6 @@ export class DiscordService {
         };
     }
 
-    /**
-     * Sleep utility for retry delays
-     */
-    private sleep(ms: number): Promise<void> {
-        return new Promise((resolve) => setTimeout(resolve, ms));
-    }
 }
 
 export const discordService = new DiscordService();

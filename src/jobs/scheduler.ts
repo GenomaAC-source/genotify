@@ -6,6 +6,7 @@
 import cron from 'node-cron';
 import { prisma } from '../lib/prisma.js';
 import { NotificationStatus } from '@prisma/client';
+import { queueService } from '../services/queue.service.js';
 
 export function initializeScheduler(): void {
     console.log('[Genotify] Initializing cron jobs...');
@@ -33,6 +34,16 @@ export function initializeScheduler(): void {
             );
         } catch (error) {
             console.error('[Genotify] Error in cleanup job:', error);
+        }
+    });
+
+    // Orphan recovery: re-queue stuck RETRYING notifications
+    // Runs every 5 minutes
+    cron.schedule('*/5 * * * *', async () => {
+        try {
+            await queueService.recoverOrphans();
+        } catch (error) {
+            console.error('[Genotify] Error in orphan recovery job:', error);
         }
     });
 

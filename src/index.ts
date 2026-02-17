@@ -9,6 +9,7 @@ import { prisma } from './lib/prisma.js';
 import { authMiddleware } from './middleware/auth.js';
 import { apiLimiter, notifyLimiter } from './middleware/rateLimit.js';
 import { initializeScheduler } from './jobs/scheduler.js';
+import { queueService } from './services/queue.service.js';
 
 // Import routes
 import healthRouter from './routes/health.js';
@@ -38,6 +39,9 @@ const server = app.listen(env.port, () => {
 
     // Initialize cron jobs
     initializeScheduler();
+
+    // Start notification queue worker
+    queueService.start();
 });
 
 // Graceful shutdown
@@ -46,6 +50,7 @@ const shutdown = async (signal: string) => {
 
     server.close(async () => {
         console.log('[Genotify] HTTP server closed');
+        queueService.stop();
 
         try {
             await prisma.$disconnect();

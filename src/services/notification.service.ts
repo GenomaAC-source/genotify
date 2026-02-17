@@ -1,10 +1,10 @@
 /**
  * Notification orchestration service
- * Handles target resolution, notification creation, and sending
+ * Handles target resolution and notification creation.
+ * Actual sending is handled by the queue worker.
  */
 
 import { prisma } from '../lib/prisma.js';
-import { discordService } from './discord.service.js';
 import { NotificationStatus, Prisma } from '@prisma/client';
 
 interface NotificationPayload {
@@ -19,6 +19,7 @@ interface NotificationPayload {
 interface SendResult {
     success: boolean;
     notificationId?: string;
+    status?: string;
     error?: string;
 }
 
@@ -28,13 +29,15 @@ interface BulkSendResult {
         target: string;
         success: boolean;
         notificationId?: string;
+        status?: string;
         error?: string;
     }>;
 }
 
 export class NotificationService {
     /**
-     * Send a single notification
+     * Queue a single notification for sending
+     * Returns immediately with the notification ID — the queue worker sends it.
      */
     async send(payload: NotificationPayload): Promise<SendResult> {
         try {
@@ -55,7 +58,7 @@ export class NotificationService {
                 };
             }
 
-            // Create notification record
+            // Create notification record as PENDING — queue worker picks it up
             const notification = await prisma.notification.create({
                 data: {
                     channelId: channel.id,
@@ -69,47 +72,17 @@ export class NotificationService {
                 },
             });
 
-            // Send to Discord
-            const result = await discordService.sendNotification(channel, {
-                title: payload.title,
-                message: payload.message,
-                color: payload.color,
-                source: payload.source,
-                metadata: payload.metadata,
-            });
+            console.log(
+                `[Genotify] Notification ${notification.id} queued for ${channel.name}`
+            );
 
-            // Update notification status
-            if (result.success) {
-                await prisma.notification.update({
-                    where: { id: notification.id },
-                    data: {
-                        status: NotificationStatus.SENT,
-                        sentAt: new Date(),
-                        retries: result.retries,
-                    },
-                });
-
-                return {
-                    success: true,
-                    notificationId: notification.id,
-                };
-            } else {
-                await prisma.notification.update({
-                    where: { id: notification.id },
-                    data: {
-                        status: NotificationStatus.FAILED,
-                        error: result.error,
-                        retries: result.retries,
-                    },
-                });
-
-                return {
-                    success: false,
-                    error: result.error,
-                };
-            }
+            return {
+                success: true,
+                notificationId: notification.id,
+                status: 'queued',
+            };
         } catch (error) {
-            console.error('[Genotify] Error sending notification:', error);
+            console.error('[Genotify] Error queuing notification:', error);
             return {
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error',
@@ -118,7 +91,8 @@ export class NotificationService {
     }
 
     /**
-     * Send to multiple targets
+     * Queue notifications to multiple targets
+     * Resolves all targets and creates PENDING records immediately.
      */
     async sendBulk(
         targets: string[],
@@ -131,6 +105,7 @@ export class NotificationService {
                     target,
                     success: result.success,
                     notificationId: result.notificationId,
+                    status: result.status,
                     error: result.error,
                 };
             })
