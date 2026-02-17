@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { getStats } from "@/lib/stats";
 import {
   Activity,
