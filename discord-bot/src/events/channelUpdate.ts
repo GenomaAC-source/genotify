@@ -14,7 +14,8 @@ export function registerChannelUpdateHandler(client: Client): void {
       // Ignora canali che non sono di testo
       if (newChannel.type !== ChannelType.GuildText) return;
 
-      console.log(`[DiscordBot] Channel updated: ${oldChannel.name} → ${newChannel.name}`);
+      const oldName = 'name' in oldChannel ? oldChannel.name : 'unknown';
+      console.log(`[DiscordBot] Channel updated: ${oldName} → ${newChannel.name}`);
 
       // Ri-sincronizza il canale
       await syncChannel(client, newChannel.id);
