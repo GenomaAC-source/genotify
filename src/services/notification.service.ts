@@ -10,9 +10,10 @@ import { NotificationStatus, Prisma } from '@prisma/client';
 interface NotificationPayload {
     target: string;
     source: string;
-    title: string;
+    title?: string;
     message: string;
     color?: string;
+    senderAvatarUrl?: string;
     metadata?: Record<string, unknown>;
 }
 
@@ -35,20 +36,12 @@ interface BulkSendResult {
 }
 
 export class NotificationService {
-    /**
-     * Queue a single notification for sending
-     * Returns immediately with the notification ID — the queue worker sends it.
-     */
     async send(payload: NotificationPayload): Promise<SendResult> {
         try {
-            // Resolve target to channel
             const channel = await this.resolveTarget(payload.target);
 
             if (!channel) {
-                return {
-                    success: false,
-                    error: `Target '${payload.target}' not found`,
-                };
+                return { success: false, error: `Target '${payload.target}' not found` };
             }
 
             if (!channel.webhookUrl) {
@@ -58,15 +51,15 @@ export class NotificationService {
                 };
             }
 
-            // Create notification record as PENDING — queue worker picks it up
             const notification = await prisma.notification.create({
                 data: {
                     channelId: channel.id,
                     target: payload.target,
                     source: payload.source,
-                    title: payload.title,
+                    title: payload.title ?? '',
                     message: payload.message,
-                    color: payload.color || 'info',
+                    color: payload.color ?? null,
+                    senderAvatarUrl: payload.senderAvatarUrl ?? null,
                     metadata: (payload.metadata as Prisma.JsonValue) || undefined,
                     status: NotificationStatus.PENDING,
                 },
@@ -90,10 +83,6 @@ export class NotificationService {
         }
     }
 
-    /**
-     * Queue notifications to multiple targets
-     * Resolves all targets and creates PENDING records immediately.
-     */
     async sendBulk(
         targets: string[],
         payload: Omit<NotificationPayload, 'target'>
@@ -111,33 +100,20 @@ export class NotificationService {
             })
         );
 
-        return {
-            success: true,
-            results,
-        };
+        return { success: true, results };
     }
 
     /**
-     * Resolve target string to Channel
      * Priority: clientSlug (CLIENT type) -> name (any type)
      */
     private async resolveTarget(target: string) {
-        // First try to find by clientSlug for CLIENT type channels
         let channel = await prisma.channel.findFirst({
-            where: {
-                clientSlug: target,
-                type: 'CLIENT',
-                active: true,
-            },
+            where: { clientSlug: target, type: 'CLIENT', active: true },
         });
 
-        // If not found, try by name (any type)
         if (!channel) {
             channel = await prisma.channel.findFirst({
-                where: {
-                    name: target,
-                    active: true,
-                },
+                where: { name: target, active: true },
             });
         }
 

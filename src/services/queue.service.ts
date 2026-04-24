@@ -135,6 +135,7 @@ class QueueService {
             title: string;
             message: string;
             color: string | null;
+            senderAvatarUrl: string | null;
             retries: number;
             channel: Channel | null;
         }>
@@ -158,8 +159,9 @@ class QueueService {
                     {
                         title: notification.title,
                         message: notification.message,
-                        color: notification.color || undefined,
+                        color: notification.color,
                         source: notification.source,
+                        senderAvatarUrl: notification.senderAvatarUrl,
                     }
                 );
 

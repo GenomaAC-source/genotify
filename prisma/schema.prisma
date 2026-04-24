@@ -40,9 +40,10 @@ model Notification {
   source      String
   title       String
   message     String
-  metadata    Json?
-  color       String?
-  status      NotificationStatus @default(PENDING)
+  metadata        Json?
+  color           String?
+  senderAvatarUrl String?            @map("sender_avatar_url")
+  status          NotificationStatus @default(PENDING)
   sentAt      DateTime?          @map("sent_at")
   error       String?
   retries     Int                @default(0)

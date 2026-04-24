@@ -14,32 +14,42 @@ interface DiscordEmbed {
     footer: { text: string };
 }
 
-interface DiscordWebhookPayload {
+interface EmbedPayload {
     username: string;
     embeds: DiscordEmbed[];
 }
 
+interface PlainTextPayload {
+    content: string;
+    username?: string;
+    avatar_url?: string;
+    allowed_mentions: { parse: string[] };
+}
+
 interface NotificationData {
-    title: string;
+    title?: string | null;
     message: string;
-    color?: string;
+    color?: string | null;
     source: string;
+    senderAvatarUrl?: string | null;
     metadata?: Record<string, unknown>;
 }
 
 const colorMap: Record<string, number> = {
-    info: 0x5865f2, // Blu Discord
-    success: 0x57f287, // Verde
-    warning: 0xfee75c, // Giallo
-    error: 0xed4245, // Rosso
-    task: 0xeb459e, // Viola
+    info: 0x5865f2,
+    success: 0x57f287,
+    warning: 0xfee75c,
+    error: 0xed4245,
+    task: 0xeb459e,
 };
 
+function shouldSendAsPlainText(notification: NotificationData): boolean {
+    const hasTitle = notification.title !== null && notification.title !== undefined && notification.title !== '';
+    const hasColor = notification.color !== null && notification.color !== undefined && notification.color !== '';
+    return !hasTitle && !hasColor;
+}
+
 export class DiscordService {
-    /**
-     * Send a single notification attempt to Discord (no retry — queue handles retries)
-     * Returns success, error, and whether it was a rate limit (429)
-     */
     async sendSingle(
         channel: Channel,
         notification: NotificationData
@@ -48,7 +58,9 @@ export class DiscordService {
             return { success: false, error: 'Channel has no webhook URL configured' };
         }
 
-        const payload = this.buildPayload(channel, notification);
+        const payload = shouldSendAsPlainText(notification)
+            ? this.buildPlainTextPayload(notification)
+            : this.buildEmbedPayload(channel, notification);
 
         try {
             const response = await fetch(channel.webhookUrl, {
@@ -80,18 +92,28 @@ export class DiscordService {
         }
     }
 
-    /**
-     * Build Discord webhook payload
-     */
-    private buildPayload(
+    private buildPlainTextPayload(notification: NotificationData): PlainTextPayload {
+        const payload: PlainTextPayload = {
+            content: notification.message,
+            username: notification.source,
+            allowed_mentions: { parse: [] },
+        };
+
+        if (notification.senderAvatarUrl) {
+            payload.avatar_url = notification.senderAvatarUrl;
+        }
+
+        return payload;
+    }
+
+    private buildEmbedPayload(
         channel: Channel,
         notification: NotificationData
-    ): DiscordWebhookPayload {
+    ): EmbedPayload {
         const fields: Array<{ name: string; value: string; inline?: boolean }> = [
             { name: 'Fonte', value: notification.source, inline: true },
         ];
 
-        // Add client name for CLIENT type channels
         if (channel.type === 'CLIENT' && (channel.clientName || channel.clientSlug)) {
             fields.push({
                 name: 'Cliente',
@@ -101,7 +123,7 @@ export class DiscordService {
         }
 
         const embed: DiscordEmbed = {
-            title: notification.title,
+            title: notification.title || '',
             description: notification.message,
             color: colorMap[notification.color || 'info'] || colorMap.info,
             fields,
@@ -114,7 +136,6 @@ export class DiscordService {
             embeds: [embed],
         };
     }
-
 }
 
 export const discordService = new DiscordService();
