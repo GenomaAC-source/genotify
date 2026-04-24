@@ -4,8 +4,29 @@
 
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
+import { isDiscordReady, resyncAllChannels } from '../discord/client.js';
 
 const router = Router();
+
+router.post('/resync', async (_req: Request, res: Response) => {
+    if (!isDiscordReady()) {
+        return res.status(503).json({
+            success: false,
+            error: 'Discord client not ready',
+        });
+    }
+
+    try {
+        const report = await resyncAllChannels();
+        return res.status(200).json({ success: true, ...report });
+    } catch (error) {
+        console.error('[Genotify] Resync failed:', error);
+        return res.status(500).json({
+            success: false,
+            error: error instanceof Error ? error.message : 'Resync failed',
+        });
+    }
+});
 
 router.get('/', async (req: Request, res: Response) => {
     try {

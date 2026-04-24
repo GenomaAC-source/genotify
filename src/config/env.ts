@@ -9,6 +9,8 @@ interface EnvConfig {
     nodeEnv: string;
     databaseUrl: string;
     apiKey: string;
+    discordBotToken?: string;
+    discordGuildId?: string;
     plutioApiKey?: string;
     googleCalendarCredentials?: string;
 }
@@ -19,7 +21,6 @@ function validateEnv(): EnvConfig {
     const databaseUrl = process.env.DATABASE_URL;
     const apiKey = process.env.API_KEY;
 
-    // Validate required variables
     if (!databaseUrl) {
         throw new Error('DATABASE_URL environment variable is required');
     }
@@ -33,6 +34,8 @@ function validateEnv(): EnvConfig {
         nodeEnv,
         databaseUrl,
         apiKey,
+        discordBotToken: process.env.DISCORD_BOT_TOKEN,
+        discordGuildId: process.env.DISCORD_GUILD_ID,
         plutioApiKey: process.env.PLUTIO_API_KEY,
         googleCalendarCredentials: process.env.GOOGLE_CALENDAR_CREDENTIALS,
     };

@@ -10,6 +10,7 @@ import { authMiddleware } from './middleware/auth.js';
 import { apiLimiter, notifyLimiter } from './middleware/rateLimit.js';
 import { initializeScheduler } from './jobs/scheduler.js';
 import { queueService } from './services/queue.service.js';
+import { startDiscordClient, stopDiscordClient, isDiscordConfigured } from './discord/client.js';
 
 // Import routes
 import healthRouter from './routes/health.js';
@@ -42,6 +43,15 @@ const server = app.listen(env.port, () => {
 
     // Start notification queue worker
     queueService.start();
+
+    // Start Discord client (non-blocking; tollera credenziali mancanti)
+    if (isDiscordConfigured()) {
+        startDiscordClient().catch((error) => {
+            console.error('[Genotify] Discord client startup failed:', error);
+        });
+    } else {
+        console.warn('[Genotify] Discord integration disabled (env missing)');
+    }
 });
 
 // Graceful shutdown
@@ -53,6 +63,7 @@ const shutdown = async (signal: string) => {
         queueService.stop();
 
         try {
+            await stopDiscordClient();
             await prisma.$disconnect();
             console.log('[Genotify] Database connection closed');
             process.exit(0);

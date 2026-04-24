@@ -8,7 +8,6 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "start:all": "node dist/index.js & cd discord-bot && node dist/index.js",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:studio": "prisma studio"
@@ -23,6 +22,7 @@
   "license": "ISC",
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "discord.js": "^14.26.3",
     "dotenv": "^17.3.1",
     "express": "^4.21.2",
     "express-rate-limit": "^8.2.1",

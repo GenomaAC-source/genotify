@@ -5,8 +5,8 @@ services:
     runtime: node
     region: frankfurt
     plan: free  # Free tier with limitations
-    buildCommand: npm install && cd discord-bot && npm install && cd .. && npx prisma generate && cd discord-bot && npx prisma generate && cd .. && npm run build && cd discord-bot && npm run build && cd ..
-    startCommand: npm run start:all
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm run start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
