@@ -23,6 +23,8 @@ export default function TestPage() {
     const [title, setTitle] = useState("Test Notifica");
     const [message, setMessage] = useState("Questa è una notifica di test inviata dalla dashboard.");
     const [color, setColor] = useState("info");
+    const [plainText, setPlainText] = useState(false);
+    const [senderAvatarUrl, setSenderAvatarUrl] = useState("");
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<any>(null);
 
@@ -41,16 +43,22 @@ export default function TestPage() {
         setLoading(true);
         setResult(null);
         try {
+            const body: Record<string, unknown> = {
+                target,
+                source: "Dashboard Test Tool",
+                message,
+            };
+            if (!plainText) {
+                body.title = title;
+                body.color = color;
+            } else if (senderAvatarUrl.trim()) {
+                body.senderAvatarUrl = senderAvatarUrl.trim();
+            }
+
             const res = await fetch("/api/notify", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    target,
-                    source: "Dashboard Test Tool",
-                    title,
-                    message,
-                    color
-                })
+                body: JSON.stringify(body)
             });
             const data = await res.json();
             setResult(data);
@@ -87,15 +95,55 @@ export default function TestPage() {
                             </select>
                         </div>
 
-                        <div className="space-y-2">
-                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Title</label>
-                            <input
-                                type="text"
-                                value={title}
-                                onChange={(e) => setTitle(e.target.value)}
-                                className="w-full px-3 py-2 bg-zinc-900 border border-border rounded-md text-sm text-foreground focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600"
-                            />
+                        <div className="flex items-center justify-between rounded-md border border-border bg-zinc-900/60 px-3 py-2">
+                            <div>
+                                <div className="text-sm text-white">Plain text mode</div>
+                                <div className="text-xs text-muted-foreground">
+                                    Invia come messaggio normale (senza embed), usando <code className="text-zinc-300">source</code> come username.
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPlainText(!plainText)}
+                                className={cn(
+                                    "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                                    plainText ? "bg-emerald-500" : "bg-zinc-700"
+                                )}
+                                aria-pressed={plainText}
+                            >
+                                <span
+                                    className={cn(
+                                        "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                                        plainText ? "translate-x-4" : "translate-x-1"
+                                    )}
+                                />
+                            </button>
                         </div>
+
+                        {!plainText && (
+                            <div className="space-y-2">
+                                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Title</label>
+                                <input
+                                    type="text"
+                                    value={title}
+                                    onChange={(e) => setTitle(e.target.value)}
+                                    className="w-full px-3 py-2 bg-zinc-900 border border-border rounded-md text-sm text-foreground focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600"
+                                />
+                            </div>
+                        )}
+
+                        {plainText && (
+                            <div className="space-y-2">
+                                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Sender Avatar URL (optional)</label>
+                                <input
+                                    type="url"
+                                    value={senderAvatarUrl}
+                                    onChange={(e) => setSenderAvatarUrl(e.target.value)}
+                                    placeholder="https://example.com/avatar.png"
+                                    className="w-full px-3 py-2 bg-zinc-900 border border-border rounded-md text-sm text-foreground focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600"
+                                />
+                            </div>
+                        )}
 
                         <div className="space-y-2">
                             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Message</label>
@@ -107,7 +155,7 @@ export default function TestPage() {
                             />
                         </div>
 
-                        <div className="space-y-2">
+                        <div className={cn("space-y-2", plainText && "hidden")}>
                             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Embed Color</label>
                             <div className="flex gap-2">
                                 {['info', 'success', 'warning', 'error', 'task'].map(c => (
