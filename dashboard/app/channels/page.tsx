@@ -11,7 +11,8 @@ import {
     Shield,
     X,
     Loader2,
-    MoreVertical
+    MoreVertical,
+    RefreshCw
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +32,8 @@ export default function ChannelsPage() {
     const [searchTerm, setSearchTerm] = useState("");
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isResyncing, setIsResyncing] = useState(false);
+    const [resyncMessage, setResyncMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
     // Form State
     const [formData, setFormData] = useState<{
@@ -60,6 +63,35 @@ export default function ChannelsPage() {
             console.error(err);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleResync = async () => {
+        setIsResyncing(true);
+        setResyncMessage(null);
+        try {
+            const res = await fetch("/api/channels/resync", { method: "POST" });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setResyncMessage({
+                    kind: "err",
+                    text: data.error || `Resync failed (${res.status})`,
+                });
+            } else {
+                setResyncMessage({
+                    kind: "ok",
+                    text: `Resync completato: ${data.synced ?? 0} sincronizzati, ${data.deactivated ?? 0} disattivati, ${data.failed ?? 0} falliti.`,
+                });
+                await fetchChannels();
+            }
+        } catch (err) {
+            setResyncMessage({
+                kind: "err",
+                text: err instanceof Error ? err.message : "Resync failed",
+            });
+        } finally {
+            setIsResyncing(false);
+            setTimeout(() => setResyncMessage(null), 6000);
         }
     };
 
@@ -97,14 +129,40 @@ export default function ChannelsPage() {
                     <h1 className="text-2xl font-semibold tracking-tight text-white">Channels</h1>
                     <p className="text-sm text-muted-foreground mt-1">Manage notification destinations and webhooks.</p>
                 </div>
-                <button
-                    onClick={() => setIsModalOpen(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-white text-black text-sm font-medium rounded-md hover:bg-white/90 transition-colors shadow-sm"
-                >
-                    <Plus className="w-4 h-4" />
-                    <span>New Channel</span>
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleResync}
+                        disabled={isResyncing}
+                        className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-border text-sm font-medium text-white rounded-md hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                        title="Risincronizza canali da Discord"
+                    >
+                        {isResyncing
+                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                            : <RefreshCw className="w-4 h-4" />}
+                        <span>{isResyncing ? "Resyncing..." : "Resync"}</span>
+                    </button>
+                    <button
+                        onClick={() => setIsModalOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-white text-black text-sm font-medium rounded-md hover:bg-white/90 transition-colors shadow-sm"
+                    >
+                        <Plus className="w-4 h-4" />
+                        <span>New Channel</span>
+                    </button>
+                </div>
             </header>
+
+            {resyncMessage && (
+                <div
+                    className={cn(
+                        "text-sm px-4 py-3 rounded-md border",
+                        resyncMessage.kind === "ok"
+                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                            : "bg-red-500/10 border-red-500/20 text-red-400"
+                    )}
+                >
+                    {resyncMessage.text}
+                </div>
+            )}
 
             <div className="flex items-center gap-4 py-4">
                 <div className="relative flex-1 max-w-sm">
