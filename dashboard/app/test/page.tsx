@@ -41,12 +41,9 @@ export default function TestPage() {
         setLoading(true);
         setResult(null);
         try {
-            const res = await fetch("http://localhost:3050/notify", {
+            const res = await fetch("/api/notify", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "x-api-key": "cambiami-con-una-chiave-sicura"
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     target,
                     source: "Dashboard Test Tool",
@@ -166,7 +163,7 @@ export default function TestPage() {
 
                     <div className="p-3 border-t border-zinc-800 bg-zinc-900/30 flex justify-between items-center text-[10px] text-zinc-500 font-mono">
                         <span>READY</span>
-                        <span>PORT: 3050</span>
+                        <span>POST /api/notify</span>
                     </div>
                 </div>
             </div>
