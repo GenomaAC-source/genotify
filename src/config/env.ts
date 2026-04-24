@@ -11,6 +11,7 @@ interface EnvConfig {
     apiKey: string;
     discordBotToken?: string;
     discordGuildId?: string;
+    rateLimitWhitelistKeys: string[];
     plutioApiKey?: string;
     googleCalendarCredentials?: string;
 }
@@ -36,6 +37,10 @@ function validateEnv(): EnvConfig {
         apiKey,
         discordBotToken: process.env.DISCORD_BOT_TOKEN,
         discordGuildId: process.env.DISCORD_GUILD_ID,
+        rateLimitWhitelistKeys: (process.env.RATE_LIMIT_WHITELIST_KEYS || '')
+            .split(',')
+            .map((k) => k.trim())
+            .filter(Boolean),
         plutioApiKey: process.env.PLUTIO_API_KEY,
         googleCalendarCredentials: process.env.GOOGLE_CALENDAR_CREDENTIALS,
     };

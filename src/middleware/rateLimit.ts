@@ -3,43 +3,41 @@
  */
 
 import rateLimit from 'express-rate-limit';
+import type { Request } from 'express';
+import { env } from '../config/env.js';
 
-/**
- * General API rate limiter
- * Max 100 requests per 15 minutes per IP
- */
+function isWhitelisted(req: Request): boolean {
+    if (env.rateLimitWhitelistKeys.length === 0) return false;
+    const key = req.header('x-api-key');
+    return !!key && env.rateLimitWhitelistKeys.includes(key);
+}
+
 export const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100,
+    windowMs: 60 * 1000,
+    max: 150,
     message: {
         success: false,
         error: 'Too many requests, please try again later',
     },
     standardHeaders: true,
     legacyHeaders: false,
+    skip: isWhitelisted,
 });
 
-/**
- * Notification endpoint rate limiter
- * Max 30 requests per minute (Discord webhook limit)
- */
 export const notifyLimiter = rateLimit({
-    windowMs: 60 * 1000, // 1 minute
-    max: 30,
+    windowMs: 60 * 1000,
+    max: 150,
     message: {
         success: false,
-        error: 'Rate limit exceeded: max 30 notifications per minute',
+        error: 'Rate limit exceeded: max 150 notifications per minute',
     },
     standardHeaders: true,
     legacyHeaders: false,
+    skip: isWhitelisted,
 });
 
-/**
- * Strict limiter for sensitive operations
- * Max 10 requests per minute
- */
 export const strictLimiter = rateLimit({
-    windowMs: 60 * 1000, // 1 minute
+    windowMs: 60 * 1000,
     max: 10,
     message: {
         success: false,
@@ -47,4 +45,5 @@ export const strictLimiter = rateLimit({
     },
     standardHeaders: true,
     legacyHeaders: false,
+    skip: isWhitelisted,
 });
