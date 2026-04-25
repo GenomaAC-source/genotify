@@ -31,6 +31,8 @@ type DiscordMember = {
 type FeedbackKind = "ok" | "err";
 type Feedback = { kind: FeedbackKind; text: string } | null;
 
+const SNOWFLAKE_REGEX = /^\d{17,20}$/;
+
 function slugify(input: string): string {
     return input
         .toLowerCase()
