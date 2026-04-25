@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
     Plus,
     Trash2,
@@ -20,10 +20,26 @@ type DmUser = {
     discordUserId: string;
 };
 
+type DiscordMember = {
+    id: string;
+    username: string;
+    displayName: string;
+    avatarUrl: string;
+    bot?: boolean;
+};
+
 type FeedbackKind = "ok" | "err";
 type Feedback = { kind: FeedbackKind; text: string } | null;
 
-const SNOWFLAKE_REGEX = /^\d{17,20}$/;
+function slugify(input: string): string {
+    return input
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 32);
+}
 
 export default function UsersPage() {
     const [users, setUsers] = useState<DmUser[]>([]);
@@ -42,9 +58,73 @@ export default function UsersPage() {
         discordUserId: "",
     });
 
+    const [memberQuery, setMemberQuery] = useState("");
+    const [memberResults, setMemberResults] = useState<DiscordMember[]>([]);
+    const [memberSearchLoading, setMemberSearchLoading] = useState(false);
+    const [memberSearchError, setMemberSearchError] = useState<string | null>(null);
+    const [selectedMember, setSelectedMember] = useState<DiscordMember | null>(null);
+    const memberDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     useEffect(() => {
         fetchUsers();
     }, []);
+
+    useEffect(() => {
+        if (memberDebounceRef.current) clearTimeout(memberDebounceRef.current);
+
+        const q = memberQuery.trim();
+        if (q.length === 0 || selectedMember) {
+            setMemberResults([]);
+            setMemberSearchLoading(false);
+            setMemberSearchError(null);
+            return;
+        }
+
+        setMemberSearchLoading(true);
+        memberDebounceRef.current = setTimeout(async () => {
+            try {
+                const res = await fetch(
+                    `/api/discord/members?q=${encodeURIComponent(q)}&limit=10`,
+                    { cache: "no-store" }
+                );
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    setMemberSearchError(data?.error || `Errore (${res.status})`);
+                    setMemberResults([]);
+                } else {
+                    setMemberSearchError(null);
+                    const list: DiscordMember[] = Array.isArray(data?.members) ? data.members : [];
+                    setMemberResults(list.filter((m) => !m.bot));
+                }
+            } catch (err) {
+                setMemberSearchError(err instanceof Error ? err.message : "Errore di rete");
+                setMemberResults([]);
+            } finally {
+                setMemberSearchLoading(false);
+            }
+        }, 300);
+
+        return () => {
+            if (memberDebounceRef.current) clearTimeout(memberDebounceRef.current);
+        };
+    }, [memberQuery, selectedMember]);
+
+    const pickMember = (member: DiscordMember) => {
+        setSelectedMember(member);
+        setMemberQuery(member.displayName);
+        setMemberResults([]);
+        setFormData({
+            slug: slugify(member.displayName || member.username),
+            name: member.displayName || member.username,
+            discordUserId: member.id,
+        });
+    };
+
+    const clearMember = () => {
+        setSelectedMember(null);
+        setMemberQuery("");
+        setFormData({ slug: "", name: "", discordUserId: "" });
+    };
 
     const showFeedback = (f: Feedback, ttl = 5000) => {
         setFeedback(f);
@@ -70,6 +150,10 @@ export default function UsersPage() {
     const resetForm = () => {
         setFormData({ slug: "", name: "", discordUserId: "" });
         setFormError(null);
+        setMemberQuery("");
+        setMemberResults([]);
+        setMemberSearchError(null);
+        setSelectedMember(null);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -336,56 +420,116 @@ export default function UsersPage() {
 
                         <form onSubmit={handleSubmit} className="p-6 space-y-6">
                             <div className="space-y-4">
-                                <div className="space-y-2">
+                                <div className="space-y-2 relative">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                                        Slug
+                                        Cerca utente nel server Discord
                                     </label>
-                                    <input
-                                        required
-                                        value={formData.slug}
-                                        onChange={(e) =>
-                                            setFormData({ ...formData, slug: e.target.value })
-                                        }
-                                        placeholder="andrea"
-                                        className="w-full px-3 py-2 bg-zinc-900 border border-border rounded-md text-sm text-foreground focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600"
-                                    />
-                                    <p className="text-[11px] text-muted-foreground">
-                                        Identificatore breve usato come <code className="text-zinc-300">target</code> nelle API.
-                                    </p>
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4 pointer-events-none" />
+                                        <input
+                                            type="text"
+                                            value={memberQuery}
+                                            onChange={(e) => {
+                                                setSelectedMember(null);
+                                                setMemberQuery(e.target.value);
+                                            }}
+                                            placeholder="Inizia a digitare un nome..."
+                                            autoComplete="off"
+                                            className="w-full pl-9 pr-9 py-2 bg-zinc-900 border border-border rounded-md text-sm text-foreground focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600"
+                                        />
+                                        {selectedMember && (
+                                            <button
+                                                type="button"
+                                                onClick={clearMember}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-white"
+                                                aria-label="Pulisci selezione"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                        {memberSearchLoading && !selectedMember && (
+                                            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
+                                        )}
+                                    </div>
+
+                                    {!selectedMember && memberResults.length > 0 && (
+                                        <ul className="absolute z-10 left-0 right-0 mt-1 max-h-64 overflow-auto bg-zinc-950 border border-border rounded-md shadow-lg divide-y divide-border">
+                                            {memberResults.map((m) => (
+                                                <li key={m.id}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => pickMember(m)}
+                                                        className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-zinc-900"
+                                                    >
+                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                        <img
+                                                            src={m.avatarUrl}
+                                                            alt=""
+                                                            className="w-7 h-7 rounded-full bg-zinc-800"
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="text-sm text-white truncate">
+                                                                {m.displayName}
+                                                            </div>
+                                                            <div className="text-[11px] font-mono text-muted-foreground truncate">
+                                                                @{m.username} · {m.id}
+                                                            </div>
+                                                        </div>
+                                                    </button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+
+                                    {memberSearchError && (
+                                        <p className="text-[11px] text-red-400">{memberSearchError}</p>
+                                    )}
+
+                                    {!selectedMember && !memberSearchLoading && memberQuery.trim().length > 0 && memberResults.length === 0 && !memberSearchError && (
+                                        <p className="text-[11px] text-muted-foreground">
+                                            Nessun membro trovato. Verifica che l&apos;utente sia nel server.
+                                        </p>
+                                    )}
                                 </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                                        Nome
-                                    </label>
-                                    <input
-                                        required
-                                        value={formData.name}
-                                        onChange={(e) =>
-                                            setFormData({ ...formData, name: e.target.value })
-                                        }
-                                        placeholder="Andrea Camolese"
-                                        className="w-full px-3 py-2 bg-zinc-900 border border-border rounded-md text-sm text-foreground focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600"
-                                    />
-                                </div>
+                                {selectedMember && (
+                                    <>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                                                Nome
+                                            </label>
+                                            <input
+                                                required
+                                                value={formData.name}
+                                                onChange={(e) =>
+                                                    setFormData({ ...formData, name: e.target.value })
+                                                }
+                                                className="w-full px-3 py-2 bg-zinc-900 border border-border rounded-md text-sm text-foreground focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600"
+                                            />
+                                        </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                                        Discord User ID
-                                    </label>
-                                    <input
-                                        required
-                                        value={formData.discordUserId}
-                                        onChange={(e) =>
-                                            setFormData({ ...formData, discordUserId: e.target.value })
-                                        }
-                                        placeholder="123456789012345678"
-                                        className="w-full px-3 py-2 bg-zinc-900 border border-border rounded-md text-sm font-mono text-foreground focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600"
-                                    />
-                                    <p className="text-[11px] text-muted-foreground">
-                                        Snowflake Discord (17–20 cifre). In Discord: Impostazioni utente → Avanzate → Modalità sviluppatore, poi tasto destro sull&apos;utente → Copia ID.
-                                    </p>
-                                </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                                                Slug
+                                            </label>
+                                            <input
+                                                required
+                                                value={formData.slug}
+                                                onChange={(e) =>
+                                                    setFormData({ ...formData, slug: e.target.value })
+                                                }
+                                                className="w-full px-3 py-2 bg-zinc-900 border border-border rounded-md text-sm font-mono text-foreground focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600"
+                                            />
+                                            <p className="text-[11px] text-muted-foreground">
+                                                Identificatore breve usato come <code className="text-zinc-300">target</code> nelle API.
+                                            </p>
+                                        </div>
+
+                                        <div className="text-[11px] font-mono text-muted-foreground bg-zinc-900/60 border border-border rounded-md px-3 py-2">
+                                            Discord ID: <span className="text-zinc-300">{formData.discordUserId}</span>
+                                        </div>
+                                    </>
+                                )}
                             </div>
 
                             {formError && (
@@ -407,7 +551,7 @@ export default function UsersPage() {
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={isSubmitting}
+                                    disabled={isSubmitting || !selectedMember}
                                     className="px-4 py-2 bg-white text-black text-sm font-medium rounded-md hover:bg-white/90 transition-colors disabled:opacity-50 flex items-center gap-2"
                                 >
                                     {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}

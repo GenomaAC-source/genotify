@@ -17,6 +17,7 @@ import healthRouter from './routes/health.js';
 import channelsRouter from './routes/channels.js';
 import notifyRouter from './routes/notify.js';
 import usersRouter from './routes/users.js';
+import discordRouter from './routes/discord.js';
 
 const app = express();
 
@@ -33,6 +34,7 @@ app.use(apiLimiter);
 // Routes with specific rate limits
 app.use('/channels', channelsRouter);
 app.use('/users', usersRouter);
+app.use('/discord', discordRouter);
 app.use('/notify', notifyLimiter, notifyRouter);
 
 // Start server
