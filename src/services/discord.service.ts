@@ -4,6 +4,7 @@
  */
 
 import { Channel } from '@prisma/client';
+import { getDiscordClient, isDiscordReady } from '../discord/client.js';
 
 interface DiscordEmbed {
     title: string;
@@ -106,10 +107,7 @@ export class DiscordService {
         return payload;
     }
 
-    private buildEmbedPayload(
-        channel: Channel,
-        notification: NotificationData
-    ): EmbedPayload {
+    private buildEmbed(channel: Channel, notification: NotificationData): DiscordEmbed {
         const fields: Array<{ name: string; value: string; inline?: boolean }> = [
             { name: 'Fonte', value: notification.source, inline: true },
         ];
@@ -122,7 +120,7 @@ export class DiscordService {
             });
         }
 
-        const embed: DiscordEmbed = {
+        return {
             title: notification.title || '',
             description: notification.message,
             color: colorMap[notification.color || 'info'] || colorMap.info,
@@ -130,11 +128,69 @@ export class DiscordService {
             timestamp: new Date().toISOString(),
             footer: { text: 'GeNotify' },
         };
+    }
 
+    private buildEmbedPayload(
+        channel: Channel,
+        notification: NotificationData
+    ): EmbedPayload {
         return {
             username: 'GeNotify',
-            embeds: [embed],
+            embeds: [this.buildEmbed(channel, notification)],
         };
+    }
+
+    async sendDM(
+        channel: Channel,
+        notification: NotificationData
+    ): Promise<{ success: boolean; error?: string; rateLimited?: boolean }> {
+        if (!channel.discordUserId) {
+            return { success: false, error: 'Channel has no Discord user ID configured' };
+        }
+
+        if (!isDiscordReady()) {
+            return { success: false, error: 'Discord client not ready' };
+        }
+
+        const client = getDiscordClient();
+        if (!client) {
+            return { success: false, error: 'Discord client not available' };
+        }
+
+        try {
+            const user = await client.users.fetch(channel.discordUserId);
+            const dm = await user.createDM();
+
+            const isPlain = shouldSendAsPlainText(notification);
+            if (isPlain) {
+                await dm.send({
+                    content: notification.message,
+                    allowedMentions: { parse: [] },
+                });
+            } else {
+                await dm.send({
+                    embeds: [this.buildEmbed(channel, notification)],
+                });
+            }
+
+            console.log(
+                `[Genotify] Sent DM to ${channel.name} (${channel.discordUserId})`
+            );
+            return { success: true };
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : 'Unknown DM error';
+            const lower = msg.toLowerCase();
+
+            if (lower.includes('rate limit') || lower.includes('rate-limit')) {
+                console.log(`[Genotify] Rate limited on DM to ${channel.discordUserId}`);
+                return { success: false, rateLimited: true, error: msg };
+            }
+
+            console.error(
+                `[Genotify] DM error to ${channel.discordUserId}: ${msg}`
+            );
+            return { success: false, error: msg };
+        }
     }
 }
 

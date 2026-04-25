@@ -9,11 +9,13 @@ datasource db {
 
 model Channel {
   id              String      @id @default(cuid())
-  discordId       String      @unique @map("discord_channel_id")
+  discordId       String?     @unique @map("discord_channel_id")
   name            String
   type            ChannelType @default(CLIENT)
   clientSlug      String?     @unique @map("client_slug")
   clientName      String?     @map("client_name")
+  userSlug        String?     @unique @map("user_slug")
+  discordUserId   String?     @unique @map("discord_user_id")
   webhookId       String?     @map("discord_webhook_id")
   webhookUrl      String?     @map("discord_webhook_url")
   categoryName    String?     @map("category_name")
@@ -30,6 +32,7 @@ enum ChannelType {
   CLIENT
   INTERNAL
   VENDOR
+  USER
 }
 
 model Notification {

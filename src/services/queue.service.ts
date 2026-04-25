@@ -9,22 +9,24 @@ import { discordService } from './discord.service.js';
 import { NotificationStatus, Channel } from '@prisma/client';
 
 const POLL_INTERVAL_MS = 2000; // Check for new notifications every 2s
-const MAX_PER_WEBHOOK_PER_MIN = 25; // Stay safely under Discord's 30/min limit
-const SEND_INTERVAL_MS = Math.ceil(60000 / MAX_PER_WEBHOOK_PER_MIN); // ~2400ms between sends per webhook
+const MAX_PER_BUCKET_PER_MIN = 25; // Stay safely under Discord's 30/min limit
+const SEND_INTERVAL_MS = Math.ceil(60000 / MAX_PER_BUCKET_PER_MIN); // ~2400ms between sends per bucket
 const MAX_RETRIES = 3;
 const ORPHAN_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes — RETRYING older than this is considered orphaned
 
-interface WebhookBucket {
+interface RateBucket {
     lastSentAt: number;
     sentThisMinute: number;
     windowStart: number;
 }
 
+type DeliveryKind = 'webhook' | 'dm';
+
 class QueueService {
     private running = false;
     private timer: ReturnType<typeof setInterval> | null = null;
     private processing = false;
-    private webhookBuckets: Map<string, WebhookBucket> = new Map();
+    private rateBuckets: Map<string, RateBucket> = new Map();
 
     /**
      * Start the queue worker
@@ -92,42 +94,77 @@ class QueueService {
 
         console.log(`[Genotify] Queue: processing ${pending.length} pending notifications`);
 
-        // Group by webhookUrl
-        const byWebhook = new Map<string, typeof pending>();
+        // Group by bucket key (webhook URL or "dm:<userId>")
+        const byBucket = new Map<
+            string,
+            { kind: DeliveryKind; notifications: typeof pending }
+        >();
 
         for (const notification of pending) {
-            if (!notification.channel?.webhookUrl) {
-                // No webhook — mark as FAILED
+            const channel = notification.channel;
+
+            if (!channel) {
                 await prisma.notification.update({
                     where: { id: notification.id },
                     data: {
                         status: NotificationStatus.FAILED,
-                        error: 'Channel has no webhook configured',
+                        error: 'Notification has no associated channel',
                     },
                 });
                 continue;
             }
 
-            const url = notification.channel.webhookUrl;
-            const group = byWebhook.get(url) || [];
-            group.push(notification);
-            byWebhook.set(url, group);
+            let bucketKey: string | null = null;
+            let kind: DeliveryKind = 'webhook';
+
+            if (channel.type === 'USER') {
+                if (!channel.discordUserId) {
+                    await prisma.notification.update({
+                        where: { id: notification.id },
+                        data: {
+                            status: NotificationStatus.FAILED,
+                            error: 'User channel has no Discord user ID configured',
+                        },
+                    });
+                    continue;
+                }
+                bucketKey = `dm:${channel.discordUserId}`;
+                kind = 'dm';
+            } else {
+                if (!channel.webhookUrl) {
+                    await prisma.notification.update({
+                        where: { id: notification.id },
+                        data: {
+                            status: NotificationStatus.FAILED,
+                            error: 'Channel has no webhook configured',
+                        },
+                    });
+                    continue;
+                }
+                bucketKey = channel.webhookUrl;
+                kind = 'webhook';
+            }
+
+            const group = byBucket.get(bucketKey) || { kind, notifications: [] };
+            group.notifications.push(notification);
+            byBucket.set(bucketKey, group);
         }
 
-        // Process each webhook group concurrently, but sequential within each group
-        const webhookPromises = Array.from(byWebhook.entries()).map(
-            ([webhookUrl, notifications]) =>
-                this.processWebhookGroup(webhookUrl, notifications)
+        // Process each bucket concurrently, sequential within each
+        const bucketPromises = Array.from(byBucket.entries()).map(
+            ([bucketKey, { kind, notifications }]) =>
+                this.processBucket(bucketKey, kind, notifications)
         );
 
-        await Promise.all(webhookPromises);
+        await Promise.all(bucketPromises);
     }
 
     /**
-     * Process notifications for a single webhook sequentially with rate limiting
+     * Process notifications for a single bucket sequentially with rate limiting
      */
-    private async processWebhookGroup(
-        webhookUrl: string,
+    private async processBucket(
+        bucketKey: string,
+        kind: DeliveryKind,
         notifications: Array<{
             id: string;
             target: string;
@@ -145,7 +182,7 @@ class QueueService {
             if (!notification.channel) continue;
 
             // Wait for rate limit window
-            await this.waitForRateLimit(webhookUrl);
+            await this.waitForRateLimit(bucketKey);
 
             // Mark as RETRYING
             await prisma.notification.update({
@@ -154,16 +191,18 @@ class QueueService {
             });
 
             try {
-                const result = await discordService.sendSingle(
-                    notification.channel,
-                    {
-                        title: notification.title,
-                        message: notification.message,
-                        color: notification.color,
-                        source: notification.source,
-                        senderAvatarUrl: notification.senderAvatarUrl,
-                    }
-                );
+                const data = {
+                    title: notification.title,
+                    message: notification.message,
+                    color: notification.color,
+                    source: notification.source,
+                    senderAvatarUrl: notification.senderAvatarUrl,
+                };
+
+                const result =
+                    kind === 'dm'
+                        ? await discordService.sendDM(notification.channel, data)
+                        : await discordService.sendSingle(notification.channel, data);
 
                 if (result.success) {
                     await prisma.notification.update({
@@ -174,7 +213,7 @@ class QueueService {
                             retries: notification.retries,
                         },
                     });
-                    this.recordSend(webhookUrl);
+                    this.recordSend(bucketKey);
                 } else if (result.rateLimited) {
                     // Put back to PENDING, will be retried next tick
                     await prisma.notification.update({
@@ -184,8 +223,7 @@ class QueueService {
                             retries: notification.retries + 1,
                         },
                     });
-                    // Stop processing this webhook group — we're rate limited
-                    console.log(`[Genotify] Rate limited on webhook, pausing group`);
+                    console.log(`[Genotify] Rate limited on ${kind} bucket, pausing group`);
                     break;
                 } else {
                     // Error — check retry count
@@ -232,10 +270,10 @@ class QueueService {
     }
 
     /**
-     * Wait until we can send to this webhook without exceeding rate limit
+     * Wait until we can send to this bucket without exceeding rate limit
      */
-    private async waitForRateLimit(webhookUrl: string): Promise<void> {
-        const bucket = this.getBucket(webhookUrl);
+    private async waitForRateLimit(bucketKey: string): Promise<void> {
+        const bucket = this.getBucket(bucketKey);
         const now = Date.now();
 
         // Reset counter if window has passed
@@ -245,9 +283,9 @@ class QueueService {
         }
 
         // If we've hit the limit, wait for window reset
-        if (bucket.sentThisMinute >= MAX_PER_WEBHOOK_PER_MIN) {
+        if (bucket.sentThisMinute >= MAX_PER_BUCKET_PER_MIN) {
             const waitTime = 60000 - (now - bucket.windowStart) + 100;
-            console.log(`[Genotify] Rate limit reached for webhook, waiting ${waitTime}ms`);
+            console.log(`[Genotify] Rate limit reached for bucket, waiting ${waitTime}ms`);
             await this.sleep(waitTime);
             bucket.sentThisMinute = 0;
             bucket.windowStart = Date.now();
@@ -263,20 +301,20 @@ class QueueService {
     /**
      * Record a successful send for rate limiting
      */
-    private recordSend(webhookUrl: string): void {
-        const bucket = this.getBucket(webhookUrl);
+    private recordSend(bucketKey: string): void {
+        const bucket = this.getBucket(bucketKey);
         bucket.lastSentAt = Date.now();
         bucket.sentThisMinute++;
     }
 
     /**
-     * Get or create a rate limit bucket for a webhook
+     * Get or create a rate limit bucket
      */
-    private getBucket(webhookUrl: string): WebhookBucket {
-        let bucket = this.webhookBuckets.get(webhookUrl);
+    private getBucket(bucketKey: string): RateBucket {
+        let bucket = this.rateBuckets.get(bucketKey);
         if (!bucket) {
             bucket = { lastSentAt: 0, sentThisMinute: 0, windowStart: Date.now() };
-            this.webhookBuckets.set(webhookUrl, bucket);
+            this.rateBuckets.set(bucketKey, bucket);
         }
         return bucket;
     }

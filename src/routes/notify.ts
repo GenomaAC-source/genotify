@@ -88,7 +88,10 @@ router.post('/', async (req: Request, res: Response) => {
     if (!result.success) {
         if (result.error?.includes('not found')) {
             res.status(404).json(result);
-        } else if (result.error?.includes('no webhook')) {
+        } else if (
+            result.error?.includes('no webhook') ||
+            result.error?.includes('no Discord user')
+        ) {
             res.status(422).json(result);
         } else {
             res.status(500).json(result);

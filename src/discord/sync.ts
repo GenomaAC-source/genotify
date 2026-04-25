@@ -111,10 +111,13 @@ export async function syncAllChannels(client: Client, guildId: string): Promise<
             else report.failed++;
         }
 
-        const allDbChannels = await prisma.channel.findMany({ where: { autoManaged: true } });
+        const allDbChannels = await prisma.channel.findMany({
+            where: { autoManaged: true, NOT: { type: 'USER' } },
+        });
         const discordChannelIds = new Set(textChannels.keys());
 
         for (const dbChannel of allDbChannels) {
+            if (!dbChannel.discordId) continue;
             if (!discordChannelIds.has(dbChannel.discordId) && dbChannel.active) {
                 await prisma.channel.update({
                     where: { id: dbChannel.id },

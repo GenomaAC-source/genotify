@@ -44,7 +44,14 @@ export class NotificationService {
                 return { success: false, error: `Target '${payload.target}' not found` };
             }
 
-            if (!channel.webhookUrl) {
+            if (channel.type === 'USER') {
+                if (!channel.discordUserId) {
+                    return {
+                        success: false,
+                        error: `User '${payload.target}' has no Discord user ID configured`,
+                    };
+                }
+            } else if (!channel.webhookUrl) {
                 return {
                     success: false,
                     error: `Channel '${payload.target}' has no webhook configured`,
@@ -104,12 +111,18 @@ export class NotificationService {
     }
 
     /**
-     * Priority: clientSlug (CLIENT type) -> name (any type)
+     * Priority: clientSlug (CLIENT) -> userSlug (USER) -> name (any type)
      */
     private async resolveTarget(target: string) {
         let channel = await prisma.channel.findFirst({
             where: { clientSlug: target, type: 'CLIENT', active: true },
         });
+
+        if (!channel) {
+            channel = await prisma.channel.findFirst({
+                where: { userSlug: target, type: 'USER', active: true },
+            });
+        }
 
         if (!channel) {
             channel = await prisma.channel.findFirst({
